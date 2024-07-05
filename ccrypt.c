@@ -2,12 +2,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <stdbool.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/err.h>
+#include <ncurses.h>
 
 #define SALT_SIZE 16
 #define KEY_SIZE 32
@@ -149,30 +151,143 @@ void process_directory(const char *directory, const char *password, int do_encry
     }
 }
 
-int main() {
-    char operation[10];
-    char directory[512];
-    char password[128];
+void init_curses() {
+    initscr();
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);
 
-    while (1) {
-        printf("Enter operation (encrypt/decrypt/exit): ");
-        scanf("%s", operation);
+    printw("| hint: arrow keys, or q to quit. :) |\n");
+    refresh();
+}
 
-        if (strcmp(operation, "encrypt") == 0 || strcmp(operation, "decrypt") == 0) {
-            int do_encrypt = (strcmp(operation, "encrypt") == 0);
+void clear_line() {
+    int y, x;
 
-            printf("Enter directory path: ");
-            scanf("%s", directory);
-            printf("Enter password: ");
-            scanf("%s", password);
+    getyx(stdscr, y, x);
 
-            process_directory(directory, password, do_encrypt);
-        } else if (strcmp(operation, "exit") == 0) {
-            break;
-        } else {
-            printf("Invalid operation. Try again.\n");
+    move(y, 0);
+    clrtoeol(); 
+}
+
+void on_enter(int *selector);
+char *get_input_with_message(const char *message);
+
+void on_key(int *key, int *selector) {
+    int y, x;
+    if (*selector >= 2 || *selector <= 0) { 
+        if (*key == '\n') {
+            getyx(stdscr, y, x);
+            move(y - 1, 0);
+            on_enter(selector);
+        } 
+    } else {
+        switch (*key) {
+            case KEY_LEFT:
+                (*selector)--;
+                printf("%i", *selector);
+                break;
+            case KEY_RIGHT:
+                (*selector)++;
+                printf("%i", *selector);
+                break;
+            case '\n':
+                getyx(stdscr, y, x);
+                move(y - 1, 0);
+                on_enter(selector);
+                break;
         }
     }
+}
+
+void on_enter(int *selector) {
+    char dir[512];
+    char pas[128]; 
+    bool do_encrypt;
+
+    switch (*selector) {
+        case 0: // encrypt
+            do_encrypt = true;
+            strcpy(dir, get_input_with_message("enter a directory path: ")); 
+            strcpy(pas, get_input_with_message("enter a password: "));
+            process_directory(dir, pas, do_encrypt);
+            break;
+        case 1: // decrypt
+            do_encrypt = false;
+            strcpy(dir, get_input_with_message("enter a directory path: "));
+            strcpy(pas, get_input_with_message("enter a password: "));
+            process_directory(dir, pas, do_encrypt);
+            break;
+        case 2: // exit
+            endwin();
+            printf("\n");
+            exit(0);
+            break;
+    }
+}
+
+
+char *get_input_with_message(const char *message) {
+    char *input = (char *)malloc(100 * sizeof(char));
+    clear_line();
+    printw("%s", message);
+    getstr(input);
+    return input;
+}
+
+
+void write_selector(int option) { // between 0 and 2
+    clear_line();
+    static bool colors_initialized = false;
+    if (!colors_initialized) {
+        start_color();
+        init_pair(1, COLOR_RED, COLOR_BLACK);
+        init_pair(2, COLOR_BLACK, COLOR_WHITE);
+        colors_initialized = true;
+    }
+
+    switch (option) {
+        case 0:
+            attron(COLOR_PAIR(1)); 
+            printw("encrypt");
+            attroff(COLOR_PAIR(1)); 
+            printw("/decrypt/exit");
+            break;
+        case 1:
+            printw("encrypt/");
+            attron(COLOR_PAIR(1));
+            printw("decrypt");
+            attroff(COLOR_PAIR(1));
+            printw("/exit");
+            break;
+        case 2:
+            printw("encrypt/decrypt/");
+            attron(COLOR_PAIR(1));
+            printw("exit");
+            attroff(COLOR_PAIR(1));
+            printw("");
+            break;
+    }
+
+    refresh();
+}
+
+int main() {
+    int selector = 0;
+    int ch;
+
+    init_curses();
+    write_selector(selector);
+
+    while ((ch = getch()) != 'q') {
+        on_key(&ch, &selector);
+        write_selector(selector); 
+        printw("%i", selector);
+        refresh();
+    }
+
+    endwin();
+    printf("\n");
 
     return 0;
 }
